@@ -34,7 +34,6 @@ public inherited sharing abstract class DataAccess {
         this.sObjectType = objectType;
         this.recordMapCache = new Map<Id, sObject>();
         this.queryCache = new Map<Integer, Set<String>>();
-        // system.debug('++++ object name = ' + this.sObjectType.getDescribe().getName() + ', trigger object =  ' + TriggerHandler.currentlyExecutingHandler.sObjectType.getDescribe().getName());
     }
 
 
