@@ -1,0 +1,45 @@
+public inherited sharing class ExampleDataAccess extends DataAccess {
+
+    @TestVisible
+    private static ExampleDataAccess instance { get { if (instance == null) instance = new ExampleDataAccess(); return instance; } set; }
+
+    @TestVisible
+    private ExampleDataAccess() {
+        super(Contact.getSObjectType());
+    }
+
+    /**************
+     * Overrides
+     **************/
+
+    protected override List<sObject> doQuery0(Set<String> inSet) {
+        return [
+            SELECT Id, Email, AccountId
+            FROM Contact
+            WHERE Id IN: inSet
+        ];
+    }
+    
+    protected override List<sObject> doQuery1(Set<String> inSet) {
+        return [
+            SELECT Id, Email, LastName, AccountId
+            FROM Contact
+            WHERE AccountId IN: inSet
+        ];
+    }
+    
+    protected override String query1IdFieldName() { return 'AccountId'; }
+
+    /*****************************************************
+     * static methods for record access
+     *****************************************************/
+
+    public static Map<Id, Contact> retrieveFromIds(Set<Id> recordIds, Boolean returnCache) {
+        return (Map<Id, Contact>)instance.getMap(recordIds, 0, returnCache);
+    }
+    
+    public static Map<Id, Contact> retrieveFromAccountIds(Set<Id> accountIds, Boolean returnCache) {
+        return (Map<Id, Contact>)instance.getMap(accountIds, 1, returnCache);
+    }
+
+}
