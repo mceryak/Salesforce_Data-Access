@@ -1,0 +1,164 @@
+@IsTest
+private class DataAccessTest {
+
+    /** 
+     * For testing DataAccess class, since it is abstract, we utilize the ExampleDataAccess 
+     * class which extends the DataAccess class
+     */
+
+    @TestSetup
+    static void makeData(){
+        Integer numRecords = 7;
+        Account[] accounts = new Account[numRecords];
+        for (Integer i = 0; i < numRecords; i++) {
+            accounts[i] = new Account(Name='test'+i);
+        }
+        insert accounts;
+        Contact[] contacts = new Contact[numRecords];
+        for (Integer i = 0; i < numRecords; i++) {
+            contacts[i] = new Contact(LastName='test'+i, Email='test'+i+'@email.com', AccountId = accounts[i].Id);
+        }
+        insert contacts;
+    }       
+
+    // static vars for use in all tests
+    private static Set<Id> allIds;
+    private static Set<Id> allAccountIds;
+    private static Set<Id> subSetIds;
+    private static Set<Id> subSetAccountIds;
+
+    static {
+        allIds = new Set<Id>(); allAccountIds = new Set<Id>(); subSetAccountIds = new Set<Id>(); subSetIds = new Set<Id>();
+        Contact[] contacts = [SELECT Id, AccountId FROM Contact];
+        for (Integer i = 0; i < contacts.size(); i++) {
+            Contact c = contacts[i];
+            if (i < 2) { subSetIds.add(c.Id); } // size = 2
+            if (i > contacts.size() - 3) { subSetAccountIds.add(c.AccountId); } // size = 2
+            allIds.add(c.Id);
+            allAccountIds.add(c.AccountId);
+        }
+    }
+
+    @IsTest 
+    static void testInstances() {
+        // after accessing the singleton instance, DataAccess should maintain the sObject
+        ExampleDataAccess instance = ExampleDataAccess.instance;
+        System.assert(DataAccess.instances.contains(Contact.getSObjectType().getDescribe().getName()));
+        Boolean succeeded = true;
+        // try creating another instance for the same object, shouldn't work
+        try { 
+            ExampleDataAccess instance2 = new ExampleDataAccess();
+        } catch (DataAccess.DataAccessException e) {
+            succeeded = false;
+            System.assert(e.getMessage().contains('already exists'));
+        }
+        System.assert(!succeeded);
+    }
+
+    @IsTest 
+    static void testIsCached() {
+        Test.startTest();
+        ExampleDataAccess inst = ExampleDataAccess.instance;
+        System.assert(!inst.isCached(setIdToSetString(subSetIds), 0));
+        System.assert(!inst.isCached(setIdToSetString(subSetIds), 1));
+        System.assert(!inst.isCached(setIdToSetString(subSetAccountIds), 0));
+        System.assert(!inst.isCached(setIdToSetString(subSetAccountIds), 1));
+        ExampleDataAccess.retrieveFromIds(subSetIds, true);
+        System.assert(inst.isCached(setIdToSetString(subSetIds), 0));
+        System.assert(!inst.isCached(setIdToSetString(allIds), 0));
+        System.assert(!inst.isCached(setIdToSetString(subSetIds), 1));
+        System.assert(!inst.isCached(setIdToSetString(subSetAccountIds), 0));
+        System.assert(!inst.isCached(setIdToSetString(subSetAccountIds), 1));
+        ExampleDataAccess.retrieveFromIds(allIds, true);
+        System.assert(inst.isCached(setIdToSetString(subSetIds), 0));
+        System.assert(inst.isCached(setIdToSetString(allIds), 0));
+        System.assert(!inst.isCached(setIdToSetString(subSetIds), 1));
+        System.assert(!inst.isCached(setIdToSetString(subSetAccountIds), 0));
+        System.assert(!inst.isCached(setIdToSetString(subSetAccountIds), 1));
+        ExampleDataAccess.retrieveFromAccountIds(subSetAccountIds, true);
+        System.assert(inst.isCached(setIdToSetString(subSetIds), 0));
+        System.assert(inst.isCached(setIdToSetString(allIds), 0));
+        System.assert(!inst.isCached(setIdToSetString(subSetIds), 1));
+        System.assert(!inst.isCached(setIdToSetString(subSetAccountIds), 0));
+        System.assert(inst.isCached(setIdToSetString(subSetAccountIds), 1));
+        System.assert(!inst.isCached(setIdToSetString(allAccountIds), 1));
+        ExampleDataAccess.retrieveFromAccountIds(allAccountIds, true);
+        System.assert(inst.isCached(setIdToSetString(subSetIds), 0));
+        System.assert(inst.isCached(setIdToSetString(allIds), 0));
+        System.assert(!inst.isCached(setIdToSetString(subSetIds), 1));
+        System.assert(!inst.isCached(setIdToSetString(subSetAccountIds), 0));
+        System.assert(inst.isCached(setIdToSetString(subSetAccountIds), 1));
+        System.assert(inst.isCached(setIdToSetString(allAccountIds), 1));
+        Test.stopTest();
+    }
+
+    private static Set<String> setIdToSetString(Set<Id> ids) {
+        return (Set<String>)JSON.deserialize(JSON.serialize(ids), Set<String>.class);
+    }
+
+
+    @IsTest
+    static void testRetrievalOfRecords() {
+        Test.startTest();
+
+        Integer soqlCount = Limits.getQueries();
+        // retrieve sub-set of records, should do query
+        Map<Id, Contact> theMap = ExampleDataAccess.retrieveFromIds(subSetIds, true);
+        assertRetrievalResults(++soqlCount, theMap, subSetIds, 'Id');
+        // retrieve same sub-set of records, should NOT do query
+        theMap = ExampleDataAccess.retrieveFromIds(subSetIds, true);
+        assertRetrievalResults(soqlCount, theMap, subSetIds, 'Id');
+        // retrieve smaller sub-set of records, should NOT do query, should NOT contain extra values from the cache
+        theMap = ExampleDataAccess.retrieveFromIds(new Set<Id>{new List<Id>(subSetIds)[0]}, true);
+        assertRetrievalResults(soqlCount, theMap, new Set<Id>{new List<Id>(subSetIds)[0]}, 'Id');
+        // retrieve larger set of records, should do query
+        theMap = ExampleDataAccess.retrieveFromIds(allIds, true);
+        assertRetrievalResults(++soqlCount, theMap, allIds, 'Id');
+        // retrieve same larger set of records with returnCache = false, should do query
+        theMap = ExampleDataAccess.retrieveFromIds(allIds, false);
+        assertRetrievalResults(++soqlCount, theMap, allIds, 'Id');
+        
+        // retrieve sub-set of records from relatedRecordId, should do query
+        theMap = ExampleDataAccess.retrieveFromAccountIds(subSetAccountIds, true);
+        assertRetrievalResults(++soqlCount, theMap, subSetAccountIds, 'AccountId');
+        // retrieve same sub-set of records from relatedRecordId, should NOT do query
+        theMap = ExampleDataAccess.retrieveFromAccountIds(subSetAccountIds, true);
+        assertRetrievalResults(soqlCount, theMap, subSetAccountIds, 'AccountId');
+        // retrieve smaller sub-set of records, should NOT do query, should NOT contain extra values from the cache
+        theMap = ExampleDataAccess.retrieveFromAccountIds(new Set<Id>{new List<Id>(subSetAccountIds)[0]}, true);
+        assertRetrievalResults(soqlCount, theMap, new Set<Id>{new List<Id>(subSetAccountIds)[0]}, 'AccountId');
+        // retrieve larger set of records, should do query
+        theMap = ExampleDataAccess.retrieveFromAccountIds(allAccountIds, true);
+        assertRetrievalResults(++soqlCount, theMap, allAccountIds, 'AccountId');
+        // retrieve same larger set of records with returnCache = false, should do query
+        theMap = ExampleDataAccess.retrieveFromAccountIds(allAccountIds, false);
+        assertRetrievalResults(++soqlCount, theMap, allAccountIds, 'AccountId');
+
+        Test.stopTest();
+    }
+
+    private static void assertRetrievalResults(Integer expectedQueries, Map<Id, Contact> theMap, Set<Id> expectedIds, String field) {
+        // assert that the returned map contains exactly what we requested, nothing extra from the cache
+        System.assertEquals(expectedIds.size(), theMap.size());
+        for (Contact c : theMap.values()) {
+            System.assert(expectedIds.contains((Id)c.get(field)));
+        }
+        // assert expected queries
+        System.assertEquals(expectedQueries, Limits.getQueries());
+    }
+
+    @IsTest 
+    static void testNotImplementedMethods() {
+        for (Integer i = 2; i < 7; i++) { 
+            Boolean succeeded = true;
+            try { 
+                ExampleDataAccess.instance.getMap(subSetIds, i, false);
+            } catch (DataAccess.DataAccessException e) {
+                succeeded = false;
+                System.assert(e.getMessage().contains('not been implemente') || e.getMessage().contains('invalid query n'));
+            }
+            System.assert(!succeeded);
+        }
+    }
+
+}
